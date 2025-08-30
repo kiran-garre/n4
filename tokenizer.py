@@ -10,10 +10,12 @@ class TokenType(Enum):
 
 	IDENT = 100
 	NUMBER = 101
-	# TYPE = 102
+	TYPE = 102
 
 	LEFT_PAREN = 200
 	RIGHT_PAREN = 201
+	NEWLINE = 206
+	COMMA = 207
 
 	COMMENT = 300
 
@@ -36,6 +38,8 @@ OPERATORS = {
 STRUCTURES = {
 	'(': TokenType.LEFT_PAREN,
 	')': TokenType.RIGHT_PAREN,
+	'\n': TokenType.NEWLINE,
+	',': TokenType.COMMA,
 }
 KEYWORDS = {
 	'fn': TokenType.FN,
@@ -46,6 +50,7 @@ KEYWORDS = {
 	'return': TokenType.RETURN
 }
 TYPES = {
+	'void',
 	'byte',
 	'short',
 	'int',
@@ -60,6 +65,12 @@ class Token:
 	def __init__(self, type, literal):
 		self.type = type
 		self.literal = literal
+
+	def get_children(self):
+		return None
+	
+	def get_value(self):
+		return f"{self.literal}: {self.type}"
 
 class Tokenizer:
 	def __init__(self):
@@ -122,16 +133,4 @@ class Tokenizer:
 		
 
 			
-path = "./example.n4"
 
-with open(path, 'r') as file:
-	content = file.read()
-
-tokenizer = Tokenizer()
-tokenizer.tokenize(content)
-token_types = list(map(lambda x: x.type.name, tokenizer.tokens))
-print(token_types)
-			
-
-
-	
