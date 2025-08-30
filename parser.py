@@ -26,6 +26,16 @@ unary      = ("-" | "!") unary | primary
 class ParserException(Exception):
 	pass
 
+class Program:
+	def __init__(self, contents):
+		self.contents = contents
+
+	def get_children(self):
+		return self.contents
+	
+	def get_value(self):
+		return 'program'
+
 class Function:
 	def __init__(self, name, params, return_type, body):
 		self.name = name
@@ -168,7 +178,16 @@ class Parser:
 	
 
 	def parse_program(self):
-		return self.parse_body()
+		contents = []
+		while self.idx < len(self.tokens) - 1:
+			if self.expect(TokenType.NEWLINE):
+				self.consume()
+			elif self.expect(TokenType.FN):
+				contents.append(self.parse_function())
+			else:
+				contents.append(self.parse_statement())
+		return Program(contents)
+
 	
 	def parse_function(self):
 		self.require(TokenType.FN)
@@ -179,12 +198,12 @@ class Parser:
 		self.require(TokenType.COLON)
 		return_type = self.require(TokenType.TYPE)
 		self.require(TokenType.NEWLINE)
-		body = self.parse_statement()
+		body = self.parse_body()
 		self.require(TokenType.END)
 		return Function(name, params, return_type, body)
 
 	def parse_params(self):
-		params =[]
+		params = []
 		while self.expect(TokenType.IDENT):
 			ident = self.consume()
 			self.require(TokenType.COLON)
@@ -194,13 +213,19 @@ class Parser:
 				self.require(TokenType.COMMA)
 		return params
 	
-	def parse_body(self):
+	def parse_body(self, terminators=(TokenType.END, TokenType.ELSE)):
 		statements = []
-		while self.expect(TokenType.IDENT, TokenType.NUMBER, TokenType.IF, TokenType.LEFT_PAREN):
+		while self.expect(
+			TokenType.IDENT,
+			TokenType.NUMBER, 
+			TokenType.IF, 
+			TokenType.LEFT_PAREN, 
+			TokenType.RETURN
+		) and not self.expect(*terminators):
 			try:
 				statements.append(self.parse_statement())
 			except ParserException as e:
-				self.errors.append(str(e))
+				self.errors.append(e)
 				self.consume_line()
 		return Body(statements)
 	
@@ -224,12 +249,12 @@ class Parser:
 		self.require(TokenType.IF)
 		condition = self.parse_expr()
 		self.require(TokenType.NEWLINE)
-		if_body = self.parse_statement()
+		if_body = self.parse_body()
 		else_body = None
 		if self.expect(TokenType.ELSE):
 			self.consume()
 			self.require(TokenType.NEWLINE)
-			else_body = self.parse_statement()
+			else_body = self.parse_body()
 		self.require(TokenType.END)
 		self.require(TokenType.NEWLINE)
 		return IfStmt(condition, if_body, else_body)
