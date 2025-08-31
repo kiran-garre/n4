@@ -26,6 +26,10 @@ class TokenType(Enum):
 	SLASH = 403
 	COLON = 404
 	ASSIGN = 405
+	LESS = 406
+	GREATER = 407
+	LESS_EQUAL = 408
+	GREATER_EQUAL = 409
 
 COMMENT_CHAR = ';'
 OPERATORS = {
@@ -35,6 +39,10 @@ OPERATORS = {
 	'/': TokenType.SLASH,
 	':': TokenType.COLON,
 	'=': TokenType.ASSIGN,
+	'<': TokenType.LESS,
+	'>': TokenType.GREATER,
+	'<=': TokenType.LESS_EQUAL,
+	'>=': TokenType.GREATER_EQUAL,
 }
 STRUCTURES = {
 	'(': TokenType.LEFT_PAREN,
@@ -52,6 +60,7 @@ KEYWORDS = {
 }
 TYPES = {
 	'void',
+	'ptr',
 	'byte',
 	'short',
 	'int',
@@ -62,11 +71,16 @@ TYPES = {
 	'ulong'
 }
 
+TOKENIZER_RED_ERROR = "\033[1m\033[91mtoken error:\033[0m"
+
 class TokenizerException(Exception):
-	pass
+	def __init__(self, message="TokenizerException", line_number=0):
+		self.message = message
+		self.line_number = line_number
+		super().__init__(self.message)
 
 class Token:
-	def __init__(self, type, literal, line_number=-1):
+	def __init__(self, type, literal, line_number=0):
 		self.type = type
 		self.literal = literal
 		self.line_number = line_number
@@ -78,21 +92,27 @@ class Token:
 		return f"{self.literal}"
 
 class Tokenizer:
-	def __init__(self, source):
-		self.tokens = []
+	def __init__(self, source, filename):
 		self.source = source
+		self.filename = filename
+
+		self.tokens = []
 		self.idx = 0
 		self.line_number = 1
 		self.errors = []
 
 	def display_errors(self):
 		for error in self.errors:
-			print(str(error))
+			print(f"{self.filename}:{error.line_number}: {TOKENIZER_RED_ERROR} {error}")
 
-	def peek(self):
-		return self.source[self.idx]
+	def peek(self, ahead=0):
+		if self.reached_eof():
+			return None
+		return self.source[self.idx + ahead]
 	
 	def consume(self):
+		if self.reached_eof():
+			return None
 		char = self.source[self.idx]
 		self.idx += 1
 		return char
@@ -117,9 +137,15 @@ class Tokenizer:
 			self.consume()
 	
 	def read_operator(self):
-		op = self.consume()
-		return Token(OPERATORS[op], op, self.line_number)
-	
+		two = self.peek() + (self.peek(1) or "")
+		if two in OPERATORS:
+			self.consume()
+			self.consume()
+			return Token(OPERATORS[two], two, self.line_number)
+		
+		one = self.consume()
+		return Token(OPERATORS[one], one, self.line_number)
+
 	def read_structure(self):
 		st = self.consume()
 		return Token(STRUCTURES[st], st, self.line_number)
@@ -148,7 +174,7 @@ class Tokenizer:
 					self.line_number += 1
 				self.tokens.append(self.read_structure())
 			else:
-				self.errors.append(TokenizerException(f"invalid character: {self.peek()}"))
+				self.errors.append(TokenizerException(f"invalid character: {self.peek()}", self.line_number))
 				self.consume()
 
 		self.resolve_keywords()
