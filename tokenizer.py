@@ -16,6 +16,7 @@ class TokenType(Enum):
 	RIGHT_PAREN = 201
 	NEWLINE = 206
 	COMMA = 207
+	EOF = 208
 
 	COMMENT = 300
 
@@ -61,45 +62,67 @@ TYPES = {
 	'ulong'
 }
 
+class TokenizerException(Exception):
+	pass
+
 class Token:
-	def __init__(self, type, literal):
+	def __init__(self, type, literal, line_number=-1):
 		self.type = type
 		self.literal = literal
+		self.line_number = line_number
 
 	def get_children(self):
 		return None
 	
 	def get_value(self):
-		return f"{self.literal}: {self.type}"
+		return f"{self.literal}"
 
 class Tokenizer:
-	def __init__(self):
+	def __init__(self, source):
 		self.tokens = []
+		self.source = source
+		self.idx = 0
+		self.line_number = 1
+		self.errors = []
 
-	def read_ident(self, source, idx):
-		ident = []
-		while source[idx].isalnum() or source[idx] == '_' and idx < len(source):
-			ident.append(source[idx])
-			idx += 1
-		return Token(TokenType.IDENT, "".join(ident)), idx
+	def display_errors(self):
+		for error in self.errors:
+			print(str(error))
 
-	def read_number(self, source, idx):
-		number = []
-		while source[idx].isnumeric() and idx < len(source):
-			number.append(source[idx])
-			idx += 1
-		return Token(TokenType.NUMBER, "".join(number)), idx
-
-	def consume_comment(self, source, idx):
-		while source[idx] != "\n" and idx < len(source):
-			idx += 1
-		return idx
-
-	def operator_to_token(self, op):
-		return Token(OPERATORS[op], op)
+	def peek(self):
+		return self.source[self.idx]
 	
-	def structure_to_token(self, st):
-		return Token(STRUCTURES[st], st)
+	def consume(self):
+		char = self.source[self.idx]
+		self.idx += 1
+		return char
+	
+	def reached_eof(self):
+		return self.idx >= len(self.source)
+
+	def read_ident(self):
+		ident = []
+		while self.peek().isalnum() or self.peek() == '_' and not self.reached_eof():
+			ident.append(self.consume())
+		return Token(TokenType.IDENT, "".join(ident), self.line_number)
+
+	def read_number(self):
+		number = []
+		while self.peek().isnumeric() and not self.reached_eof():
+			number.append(self.consume())
+		return Token(TokenType.NUMBER, "".join(number), self.line_number)
+
+	def consume_comment(self):
+		while self.peek() != "\n" and not self.reached_eof():
+			self.consume()
+	
+	def read_operator(self):
+		op = self.consume()
+		return Token(OPERATORS[op], op, self.line_number)
+	
+	def read_structure(self):
+		st = self.consume()
+		return Token(STRUCTURES[st], st, self.line_number)
 	
 	def resolve_keywords(self):
 		for i in range(len(self.tokens)):
@@ -108,28 +131,28 @@ class Tokenizer:
 			elif self.tokens[i].literal in TYPES:
 				self.tokens[i].type = TokenType.TYPE
 
-	def tokenize(self, source: str):
-		idx = 0
-		while idx < len(source):
-			c = source[idx]
-			if c.isalpha() or c == '_':
-				token, idx = self.read_ident(source, idx)
-				self.tokens.append(token)
-				continue
-			elif c.isnumeric():
-				token, idx = self.read_number(source, idx)
-				self.tokens.append(token)
-				continue
-			elif c == ';':
-				idx = self.consume_comment(source, idx)
-				continue
-			elif c in OPERATORS:
-				self.tokens.append(self.operator_to_token(c))
-			elif c in STRUCTURES:
-				self.tokens.append(self.structure_to_token(c))
-			idx += 1
+	def tokenize(self):
+		while not self.reached_eof():
+			if self.peek() in (' ', '\t'):
+				self.consume()
+			elif self.peek().isalpha() or self.peek() == '_':
+				self.tokens.append(self.read_ident())
+			elif self.peek().isnumeric():
+				self.tokens.append(self.read_number())
+			elif self.peek() == ';':
+				self.consume_comment()
+			elif self.peek() in OPERATORS:
+				self.tokens.append(self.read_operator())
+			elif self.peek() in STRUCTURES:
+				if self.peek() == '\n':
+					self.line_number += 1
+				self.tokens.append(self.read_structure())
+			else:
+				self.errors.append(TokenizerException(f"invalid character: {self.peek()}"))
+				self.consume()
 
 		self.resolve_keywords()
+		self.tokens.append(Token(TokenType.EOF, ''))
 		
 
 			

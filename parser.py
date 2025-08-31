@@ -36,7 +36,7 @@ class Program:
 	def get_value(self):
 		return 'program'
 
-class Function:
+class FunctionDefinition:
 	def __init__(self, name, params, return_type, body):
 		self.name = name
 		self.params = params
@@ -47,7 +47,7 @@ class Function:
 		return [*self.params, self.return_type, self.body]
 	
 	def get_value(self):
-		return self.name
+		return f"fn {self.name.literal}"
 
 class Param:
 	def __init__(self, ident, type):
@@ -70,7 +70,7 @@ class Body:
 	def get_value(self):
 		return "body"
 
-class IfStmt:
+class IfStatement:
 	def __init__(self, condition, true_body, false_body):
 		self.condition = condition
 		self.true_body = true_body
@@ -107,6 +107,17 @@ class Assignment:
 
 	def get_value(self):
 		return "assign"
+	
+class FunctionCall:
+	def __init__(self, name, args):
+		self.name = name
+		self.args = args
+
+	def get_children(self):
+		return self.args
+	
+	def get_value(self):
+		return f"call {self.name.literal}"
 
 class BinExpr:
 	def __init__(self, left, op, right):
@@ -160,32 +171,31 @@ class Parser:
 		return self.peek().type in types
 	
 	def require(self, type):
-		if not self.peek():
-			raise ParserException(f"expected {type}, got EOF")
 		if self.peek().type != type:
-			raise ParserException(f"expected {type}, got {self.peek().type}")
+			raise ParserException(f"{self.peek().line_number} expected {type}, got {self.peek().type}")
 		return self.consume()
 
 	def display_errors(self):
 		for error in self.errors:
 			print(error)
 
-	def consume_line(self):
-		while self.consume() not in (TokenType.NEWLINE, None):
-			continue
-			
-	
-	
+	def synchronize(self):
+		while not self.expect(TokenType.EOF):
+			if self.consume() in (TokenType.NEWLINE, TokenType.END, TokenType.ELSE):
+				return
 
 	def parse_program(self):
 		contents = []
-		while self.idx < len(self.tokens) - 1:
-			if self.expect(TokenType.NEWLINE):
-				self.consume()
-			elif self.expect(TokenType.FN):
-				contents.append(self.parse_function())
-			else:
-				contents.append(self.parse_statement())
+		while not self.expect(TokenType.EOF):
+			try:
+				if self.expect(TokenType.NEWLINE):
+					self.consume()
+				elif self.expect(TokenType.FN):
+					contents.append(self.parse_function())
+				else:
+					contents.append(self.parse_statement())
+			except ParserException as e:
+				self.errors.append(e)
 		return Program(contents)
 
 	
@@ -200,7 +210,7 @@ class Parser:
 		self.require(TokenType.NEWLINE)
 		body = self.parse_body()
 		self.require(TokenType.END)
-		return Function(name, params, return_type, body)
+		return FunctionDefinition(name, params, return_type, body)
 
 	def parse_params(self):
 		params = []
@@ -213,20 +223,25 @@ class Parser:
 				self.require(TokenType.COMMA)
 		return params
 	
-	def parse_body(self, terminators=(TokenType.END, TokenType.ELSE)):
+	def parse_body(self):
 		statements = []
 		while self.expect(
 			TokenType.IDENT,
 			TokenType.NUMBER, 
 			TokenType.IF, 
 			TokenType.LEFT_PAREN, 
-			TokenType.RETURN
-		) and not self.expect(*terminators):
+			TokenType.RETURN,
+			TokenType.NEWLINE,
+		):	
 			try:
+				
+				if self.expect(TokenType.NEWLINE):
+					self.consume()
+					continue
 				statements.append(self.parse_statement())
 			except ParserException as e:
 				self.errors.append(e)
-				self.consume_line()
+				self.synchronize()
 		return Body(statements)
 	
 	def parse_statement(self):
@@ -240,8 +255,10 @@ class Parser:
 			statement = self.parse_if_statement()
 		elif self.expect(TokenType.RETURN):
 			statement = self.parse_return_statement()
-		if statement:
-			self.require(TokenType.NEWLINE)
+		if not statement:
+			raise ParserException("expected a statement")
+		
+		self.require(TokenType.NEWLINE)
 		return statement
 				
 
@@ -256,8 +273,7 @@ class Parser:
 			self.require(TokenType.NEWLINE)
 			else_body = self.parse_body()
 		self.require(TokenType.END)
-		self.require(TokenType.NEWLINE)
-		return IfStmt(condition, if_body, else_body)
+		return IfStatement(condition, if_body, else_body)
 	
 	def parse_return_statement(self):
 		self.require(TokenType.RETURN)
@@ -265,17 +281,30 @@ class Parser:
 	
 	def parse_assignment(self):
 		type = None
-		ident = self.require()
+		ident = self.require(TokenType.IDENT)
 		if self.peek(1).type == TokenType.COLON:
 			self.consume() # consume colon
 			type = self.require(TokenType.TYPE)
 		self.require(TokenType.ASSIGN)
 		expr = self.parse_expr()
 		return Assignment(ident, expr, type)
+	
+	def parse_function_call(self):
+		name = self.require(TokenType.IDENT)
+		self.require(TokenType.LEFT_PAREN)
+		args = []
+		while self.expect(TokenType.IDENT):
+			ident = self.consume()
+			args.append(ident)
+			if not self.expect(TokenType.RIGHT_PAREN):
+				self.require(TokenType.COMMA)
+		self.require(TokenType.RIGHT_PAREN)
+		return FunctionCall(name, args)
 
 	def parse_expr(self):
-		expr = self.parse_addition()
-		return expr
+		if self.peek(1).type == TokenType.LEFT_PAREN:
+			return self.parse_function_call()
+		return self.parse_addition()
 
 	def parse_addition(self):
 		left = self.parse_factor()
@@ -302,6 +331,6 @@ class Parser:
 			self.require(TokenType.RIGHT_PAREN)
 			return expr
 		else:
-			raise ParserException("Expected primary expression")
+			raise ParserException("expected primary expression")
 
 
