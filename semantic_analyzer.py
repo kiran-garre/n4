@@ -31,31 +31,27 @@ class SemanticAnalyzer:
 		for error in self.reports:
 			print(f"{self.filename}:{error.line_number}: {SEMANTIC_RED_ERROR} {error.message}")
 
-	def report(self, name, message, line_number=0):
+	def report(self, name: str, message: str, line_number=0):
 		if name in self.reported:
 			return
 		self.reports.append(SemanticError(message, line_number))
 		self.reported.add(name)
 
-	def access(self, node):
+	def access(self, node: Primary):
 		name = node.get_name()
-		for i in range(len(self.scope_stack) - 1, -1, -1):
-			if name in self.scope_stack[i]:
-				node.type = self.scope_stack[i][name]
+		for scope in reversed(self.scope_stack):
+			if name in scope:
+				node.dtype = scope[name]
+				print(id(node))
 				return
 		self.report(name, f"'{name}' used before definition", node.line)
 
-	def define(self, node, type):
+	def define(self, node: Primary, type: str):
 		name = node.get_name()
-		if type and name in self.scope_stack[-1]:
+		if name in self.scope_stack[-1]:
 			self.report(name, f"redefinition of '{name}'", node.line)
 			return
-		elif name in self.scope_stack[-1]:
-			return
-		elif not type:
-			self.scope_stack[-1][name] = "any"
-		else:
-			self.scope_stack[-1][name] = type
+		self.scope_stack[-1][name] = type
 		node.type = type
 
 	def new_scope(self):
@@ -64,8 +60,8 @@ class SemanticAnalyzer:
 	def end_scope(self):
 		self.scope_stack.pop()
 
-	# def get_current_type(self, name):
-	# 	return self.scope_stack[-1][name]
+	def fitting_int_type(value):
+		return "int"
 
 	def postorder(self, node):
 		"""
@@ -74,7 +70,10 @@ class SemanticAnalyzer:
 		print(self.scope_stack)
 		if isinstance(node, Primary):
 			if node.token.token_type == TokenType.IDENT:
+				print(id(node))
 				self.access(node)
+			elif node.token.token_type == TokenType.NUMBER:
+				node.dtype = SemanticAnalyzer.fitting_int_type(node.token.literal)
 		elif isinstance(node, UnaryExpr):
 			self.postorder(node.operand)
 		elif isinstance(node, BinExpr):
@@ -85,13 +84,10 @@ class SemanticAnalyzer:
 			for arg in node.args:
 				self.postorder(arg)
 		elif isinstance(node, AssignmentStatement):
-			if isinstance(node.lhs, Primary):
-				type = None 
-				if node.type:
-					type = node.type.literal
-				self.define(node.lhs, type)
-			else:
-				self.postorder(node.lhs)
+			self.postorder(node.lhs)
+			self.postorder(node.rhs)
+		elif isinstance(node, DefinitionStatement):
+			self.define(node.ident, node.type)
 			self.postorder(node.rhs)
 		elif isinstance(node, ReturnStatement):
 			self.postorder(node.expr)
@@ -111,7 +107,7 @@ class SemanticAnalyzer:
 			for statement in node.statements:
 				self.postorder(statement)
 		elif isinstance(node, Param):
-			self.define(node, node.type.literal)
+			self.define(node, node.type)
 		elif isinstance(node, FunctionDefinition):
 			self.define(node, node.return_type.literal)
 			self.new_scope()

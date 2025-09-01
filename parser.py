@@ -39,6 +39,8 @@ FIRST_BODY = FIRST_EXPR | {
 	TokenType.RETURN,
 	TokenType.NEWLINE,
 }
+
+
 class ParserException(Exception):
 	def __init__(self, message="ParserException", line_number=0):
 		self.message = message
@@ -49,129 +51,32 @@ class ASTNode:
     def __init__(self, line=None):
         self.line = line
 
-class Program(ASTNode):
-	def __init__(self, contents):
-		super().__init__(1)
-		self.contents = contents
-
+class Primary(ASTNode):
+	def __init__(self, token):
+		super().__init__(token.line_number)
+		self.token = token
+		self.dtype: str = None
+	
 	def get_children(self):
-		return self.contents
+		return self.token.get_children()
 	
 	def get_value(self):
-		return 'program'
-
-class FunctionDefinition(ASTNode):
-	def __init__(self, name, params, return_type, body):
-		super().__init__(name.line_number)
-		self.name = name
-		self.params = params
-		self.return_type = return_type
-		self.body = body
-
-	def get_children(self):
-		return [*self.params, self.body, self.return_type,]
-	
-	def get_value(self):
-		return f"fn {self.name.literal}"
+		return f"{self.token.get_value()}: {self.dtype}"
 	
 	def get_name(self):
-		return self.name.literal
-
-class Param(ASTNode):
-	def __init__(self, ident, type):
-		super().__init__(ident.line_number)
-		self.ident = ident
-		self.type = type
-
-	def get_children(self):
-		None
+		return self.token.literal
 	
-	def get_value(self):
-		return f"{self.ident.literal}: {self.type.literal}"
-	
-	def get_name(self):
-		return self.ident.literal
-
-class Body(ASTNode):
-	def __init__(self, statements):
-		super().__init__(statements[0].line)
-		self.statements = statements
-	
-	def get_children(self):
-		return self.statements
-	
-	def get_value(self):
-		return "body"
-	
-class WhileStatement(ASTNode):
-	def __init__(self, condition, body):
-		super().__init__(condition.line)
-		self.condition = condition
-		self.body = body
+class UnaryExpr(ASTNode):
+	def __init__(self, op, operand):
+		super().__init__(operand.line)
+		self.op = op
+		self.operand = operand
 
 	def get_children(self):
-		return self.condition, self.body
+		return [self.operand]
 	
 	def get_value(self):
-		return "while"
-
-class IfStatement(ASTNode):
-	def __init__(self, condition, true_body, false_body):
-		super().__init__(condition.line)
-		self.condition = condition
-		self.true_body = true_body
-		self.false_body = false_body
-
-	def get_children(self):
-		if self.false_body:
-			return self.condition, self.true_body, self.false_body
-		return self.condition, self.true_body
-	
-	def get_value(self):
-		return "if"
-	
-class ReturnStatement(ASTNode):
-	def __init__(self, expr):
-		super().__init__(expr.line)
-		self.expr = expr
-
-	def get_children(self):
-		return [self.expr]
-	
-	def get_value(self):
-		return "return"
-
-class AssignmentStatement(ASTNode):
-	def __init__(self, lhs, rhs, type=None):
-		super().__init__(lhs.line)
-		self.lhs = lhs
-		self.rhs = rhs
-		self.type = type
-	
-	def get_children(self):
-		if self.type:
-			return self.lhs, self.type, self.rhs
-		return self.lhs, self.rhs
-
-	def get_value(self):
-		return "assign"
-	
-class FunctionCall(ASTNode):
-	def __init__(self, name, args):
-		super().__init__(name.line_number)
-		self.name = name
-		self.args = args
-
-	def get_children(self):
-		return self.args
-	
-	def get_value(self):
-		return f"call {self.name.literal}"
-	
-	def get_name(self):
-		if isinstance(self.name, Token):
-			return self.name.literal
-		return None
+		return self.op.literal
 
 class BinExpr(ASTNode):
 	def __init__(self, left, op, right):
@@ -186,38 +91,144 @@ class BinExpr(ASTNode):
 	def get_value(self):
 		return self.op.literal
 	
-class UnaryExpr(ASTNode):
-	def __init__(self, op, operand):
-		super().__init__(operand.line)
-		self.op = op
-		self.operand = operand
+class FunctionCall(ASTNode):
+	def __init__(self, name: Primary, args):
+		super().__init__(name.line)
+		self.name = name
+		self.args = args
 
 	def get_children(self):
-		return [self.operand]
+		return self.args
 	
 	def get_value(self):
-		return self.op.literal
-
-class Primary(ASTNode):
-	def __init__(self, token):
-		super().__init__(token.line_number)
-		self.token = token
-		self.type = None
-	
-	def get_children(self):
-		if isinstance(self.token, Token):
-			return None
-		return self.token.get_children()
-	
-	def get_value(self):
-		if isinstance(self.token, Token):
-			return self.token.get_value()
-		return None
+		return f"call {self.name.get_name()}"
 	
 	def get_name(self):
-		if isinstance(self.token, Token):
-			return self.token.literal
-		return None
+		return self.name.get_name()
+	
+Expr = Primary | UnaryExpr | BinExpr | FunctionCall
+
+class DefinitionStatement(ASTNode):
+	def __init__(self, ident: Primary, rhs: Expr, type: str):
+		super().__init__(ident.line)
+		self.ident = ident
+		self.rhs = rhs
+		self.type = type
+
+	def get_children(self):
+		return self.ident, self.rhs
+
+	def get_value(self):
+		return f"{self.ident.get_name()}: {self.type}"
+	
+class AssignmentStatement(ASTNode):
+	def __init__(self, lhs: Expr, rhs: Expr):
+		super().__init__(lhs.line)
+		self.lhs = lhs
+		self.rhs = rhs
+	
+	def get_children(self):
+		return self.lhs, self.rhs
+
+	def get_value(self):
+		return "assign"
+	
+class IfStatement(ASTNode):
+	def __init__(self, condition: Expr, true_body, false_body):
+		super().__init__(condition.line)
+		self.condition = condition
+		self.true_body = true_body
+		self.false_body = false_body
+
+	def get_children(self):
+		if self.false_body:
+			return self.condition, self.true_body, self.false_body
+		return self.condition, self.true_body
+	
+	def get_value(self):
+		return "if"
+	
+class WhileStatement(ASTNode):
+	def __init__(self, condition: Expr, body):
+		super().__init__(condition.line)
+		self.condition = condition
+		self.body = body
+
+	def get_children(self):
+		return self.condition, self.body
+	
+	def get_value(self):
+		return "while"
+	
+class ReturnStatement(ASTNode):
+	def __init__(self, expr: Expr):
+		super().__init__(expr.line)
+		self.expr = expr
+
+	def get_children(self):
+		return [self.expr]
+	
+	def get_value(self):
+		return "return"
+	
+Statement = DefinitionStatement | AssignmentStatement | IfStatement | WhileStatement | ReturnStatement
+
+class Body(ASTNode):
+	def __init__(self, statements: list[Statement]):
+		if statements:
+			super().__init__(statements[0].line)
+		else:
+			super().__init__(0)
+		self.statements = statements
+	
+	def get_children(self):
+		return self.statements
+	
+	def get_value(self):
+		return "body"
+
+class Param(ASTNode):
+	def __init__(self, ident: Primary, type: str):
+		super().__init__(ident.line)
+		self.ident = ident
+		self.type = type
+
+	def get_children(self):
+		None
+	
+	def get_value(self):
+		return f"{self.ident.get_name()}: {self.type}"
+	
+	def get_name(self):
+		return self.ident.get_name()
+	
+class FunctionDefinition(ASTNode):
+	def __init__(self, name: Primary, params: list[Param], return_type: str, body):
+		super().__init__(name.line)
+		self.name = name
+		self.params = params
+		self.return_type = return_type
+		self.body = body
+
+	def get_children(self):
+		return [*self.params, self.body, self.return_type,]
+	
+	def get_value(self):
+		return f"fn {self.name.get_name()}"
+	
+	def get_name(self):
+		return self.name.get_name()
+
+class Program(ASTNode):
+	def __init__(self, contents: list[Statement | FunctionDefinition]):
+		super().__init__(1)
+		self.contents = contents
+
+	def get_children(self):
+		return self.contents
+	
+	def get_value(self):
+		return 'program'
 
 class Parser:
 	def __init__(self, tokens: list[Token], filename):
@@ -243,7 +254,7 @@ class Parser:
 			return False
 		return self.peek().token_type in types
 	
-	def require(self, type):
+	def require(self, type: TokenType):
 		if self.peek().token_type != type:
 			raise ParserException(f"expected {type}, got {self.peek().token_type}", self.peek().line_number)
 		return self.consume()
@@ -273,7 +284,7 @@ class Parser:
 	
 	def parse_function(self):
 		self.require(TokenType.FN)
-		name = self.require(TokenType.IDENT)
+		name = self.parse_primary(TokenType.IDENT)
 		self.require(TokenType.LEFT_PAREN)
 		params = self.parse_params()
 		self.require(TokenType.RIGHT_PAREN)
@@ -287,9 +298,9 @@ class Parser:
 	def parse_params(self):
 		params = []
 		while self.expect(TokenType.IDENT):
-			ident = self.consume()
+			ident = self.parse_primary(TokenType.IDENT)
 			self.require(TokenType.COLON)
-			type = self.require(TokenType.TYPE)
+			type = self.require(TokenType.TYPE).literal
 			params.append(Param(ident, type))
 			if not self.expect(TokenType.RIGHT_PAREN):
 				self.require(TokenType.COMMA)
@@ -311,11 +322,12 @@ class Parser:
 	def parse_statement(self):
 		statement = None
 		if self.expect(TokenType.IDENT, TokenType.NUMBER, TokenType.STAR):
-			statement = self.parse_expr()
-			if self.expect(TokenType.ASSIGN, TokenType.COLON):
-				if not Parser.expr_is_valid_lvalue(statement):
-					raise ParserException("invalid lvalue", self.peek().line_number)
-				statement = self.parse_assignment(statement)
+			if self.peek(1).token_type == TokenType.COLON:
+				statement = self.parse_definition()
+			else:
+				statement = self.parse_expr()
+				if self.expect(TokenType.ASSIGN):
+					statement = self.parse_assignment(statement)
 		elif self.expect(TokenType.IF):
 			statement = self.parse_if_statement()
 		elif self.expect(TokenType.WHILE):
@@ -360,17 +372,23 @@ class Parser:
 		self.require(TokenType.RETURN)
 		return ReturnStatement(self.parse_expr())
 	
-	def parse_assignment(self, ident):
-		type = None
-		if self.peek().token_type == TokenType.COLON:
-			self.consume() # consume colon
-			type = self.require(TokenType.TYPE)
+	def parse_assignment(self, lhs):
+		if not Parser.expr_is_valid_lvalue(lhs):
+			raise ParserException("invalid lvalue", self.peek().line_number)
 		self.require(TokenType.ASSIGN)
-		expr = self.parse_expr()
-		return AssignmentStatement(ident, expr, type)
+		rhs = self.parse_expr()
+		return AssignmentStatement(lhs, rhs)
+	
+	def parse_definition(self):
+		name = self.parse_primary(TokenType.IDENT)
+		self.require(TokenType.COLON)
+		type = self.require(TokenType.TYPE).literal
+		self.require(TokenType.ASSIGN)
+		rhs = self.parse_expr()
+		return DefinitionStatement(name, rhs, type)
 	
 	def parse_function_call(self):
-		name = self.require(TokenType.IDENT)
+		name = self.parse_primary(TokenType.IDENT)
 		self.require(TokenType.LEFT_PAREN)
 		args = []
 		while self.expect(*FIRST_EXPR):
@@ -422,7 +440,9 @@ class Parser:
 			return UnaryExpr(op, operand)
 		return self.parse_primary()
 	
-	def parse_primary(self):
+	def parse_primary(self, type=None):
+		if type and not self.expect(type):
+			self.require(type)
 		if self.expect(TokenType.IDENT, TokenType.NUMBER):
 			return Primary(self.consume())
 		elif self.expect(TokenType.LEFT_PAREN):
