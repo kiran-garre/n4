@@ -25,14 +25,33 @@ unary      = ("-" | "!") unary | primary
 
 PARSER_RED_ERROR = "\033[1m\033[91mparse error:\033[0m"
 
+
+FIRST_EXPR = {
+	TokenType.IDENT,
+	TokenType.NUMBER, 
+	TokenType.LEFT_PAREN, 
+	TokenType.STAR,
+	TokenType.MINUS,
+}
+FIRST_BODY = FIRST_EXPR | {
+	TokenType.IF, 
+	TokenType.WHILE,
+	TokenType.RETURN,
+	TokenType.NEWLINE,
+}
 class ParserException(Exception):
 	def __init__(self, message="ParserException", line_number=0):
 		self.message = message
 		self.line_number = line_number
 		super().__init__(self.message)
 
-class Program:
+class ASTNode:
+    def __init__(self, line=None):
+        self.line = line
+
+class Program(ASTNode):
 	def __init__(self, contents):
+		super().__init__(1)
 		self.contents = contents
 
 	def get_children(self):
@@ -41,8 +60,9 @@ class Program:
 	def get_value(self):
 		return 'program'
 
-class FunctionDefinition:
+class FunctionDefinition(ASTNode):
 	def __init__(self, name, params, return_type, body):
+		super().__init__(name.line_number)
 		self.name = name
 		self.params = params
 		self.return_type = return_type
@@ -53,9 +73,13 @@ class FunctionDefinition:
 	
 	def get_value(self):
 		return f"fn {self.name.literal}"
+	
+	def get_name(self):
+		return self.name.literal
 
-class Param:
+class Param(ASTNode):
 	def __init__(self, ident, type):
+		super().__init__(ident.line_number)
 		self.ident = ident
 		self.type = type
 
@@ -64,9 +88,13 @@ class Param:
 	
 	def get_value(self):
 		return f"{self.ident.literal}: {self.type.literal}"
+	
+	def get_name(self):
+		return self.ident.literal
 
-class Body:
+class Body(ASTNode):
 	def __init__(self, statements):
+		super().__init__(statements[0].line)
 		self.statements = statements
 	
 	def get_children(self):
@@ -75,8 +103,9 @@ class Body:
 	def get_value(self):
 		return "body"
 	
-class WhileStatement:
+class WhileStatement(ASTNode):
 	def __init__(self, condition, body):
+		super().__init__(condition.line)
 		self.condition = condition
 		self.body = body
 
@@ -86,8 +115,9 @@ class WhileStatement:
 	def get_value(self):
 		return "while"
 
-class IfStatement:
+class IfStatement(ASTNode):
 	def __init__(self, condition, true_body, false_body):
+		super().__init__(condition.line)
 		self.condition = condition
 		self.true_body = true_body
 		self.false_body = false_body
@@ -100,8 +130,9 @@ class IfStatement:
 	def get_value(self):
 		return "if"
 	
-class ReturnStatement:
+class ReturnStatement(ASTNode):
 	def __init__(self, expr):
+		super().__init__(expr.line)
 		self.expr = expr
 
 	def get_children(self):
@@ -110,8 +141,9 @@ class ReturnStatement:
 	def get_value(self):
 		return "return"
 
-class Assignment:
+class AssignmentStatement(ASTNode):
 	def __init__(self, lhs, rhs, type=None):
+		super().__init__(lhs.line)
 		self.lhs = lhs
 		self.rhs = rhs
 		self.type = type
@@ -124,8 +156,9 @@ class Assignment:
 	def get_value(self):
 		return "assign"
 	
-class FunctionCall:
+class FunctionCall(ASTNode):
 	def __init__(self, name, args):
+		super().__init__(name.line_number)
 		self.name = name
 		self.args = args
 
@@ -134,9 +167,15 @@ class FunctionCall:
 	
 	def get_value(self):
 		return f"call {self.name.literal}"
+	
+	def get_name(self):
+		if isinstance(self.name, Token):
+			return self.name.literal
+		return None
 
-class BinExpr:
+class BinExpr(ASTNode):
 	def __init__(self, left, op, right):
+		super().__init__(left.line)
 		self.op = op
 		self.left = left
 		self.right = right
@@ -147,8 +186,9 @@ class BinExpr:
 	def get_value(self):
 		return self.op.literal
 	
-class UnaryExpr:
+class UnaryExpr(ASTNode):
 	def __init__(self, op, operand):
+		super().__init__(operand.line)
 		self.op = op
 		self.operand = operand
 
@@ -158,9 +198,11 @@ class UnaryExpr:
 	def get_value(self):
 		return self.op.literal
 
-class Primary:
+class Primary(ASTNode):
 	def __init__(self, token):
+		super().__init__(token.line_number)
 		self.token = token
+		self.type = None
 	
 	def get_children(self):
 		if isinstance(self.token, Token):
@@ -170,6 +212,11 @@ class Primary:
 	def get_value(self):
 		if isinstance(self.token, Token):
 			return self.token.get_value()
+		return None
+	
+	def get_name(self):
+		if isinstance(self.token, Token):
+			return self.token.literal
 		return None
 
 class Parser:
@@ -194,18 +241,18 @@ class Parser:
 	def expect(self, *types) -> bool:
 		if not self.peek():
 			return False
-		return self.peek().type in types
+		return self.peek().token_type in types
 	
 	def require(self, type):
-		if self.peek().type != type:
-			raise ParserException(f"expected {type}, got {self.peek().type}", self.peek().line_number)
+		if self.peek().token_type != type:
+			raise ParserException(f"expected {type}, got {self.peek().token_type}", self.peek().line_number)
 		return self.consume()
 
 	def display_errors(self):
 		for error in self.errors:
 			print(f"{self.filename}:{error.line_number}: {PARSER_RED_ERROR} {error}")
 
-	def synchronize(self):
+	def recover(self):
 		while not self.expect(TokenType.EOF):
 			if self.consume() in (TokenType.NEWLINE, TokenType.END, TokenType.ELSE):
 				return
@@ -213,7 +260,6 @@ class Parser:
 	def parse_program(self):
 		contents = []
 		while not self.expect(TokenType.EOF):
-			print(self.idx, self.peek().type)
 			try:
 				if self.expect(TokenType.NEWLINE):
 					self.consume()
@@ -251,16 +297,7 @@ class Parser:
 	
 	def parse_body(self):
 		statements = []
-		while self.expect(
-			TokenType.IDENT,
-			TokenType.NUMBER, 
-			TokenType.IF, 
-			TokenType.WHILE,
-			TokenType.LEFT_PAREN, 
-			TokenType.RETURN,
-			TokenType.NEWLINE,
-			TokenType.STAR
-		):	
+		while self.expect(*FIRST_BODY):	
 			try:
 				if self.expect(TokenType.NEWLINE):
 					self.consume()
@@ -268,7 +305,7 @@ class Parser:
 				statements.append(self.parse_statement())
 			except ParserException as e:
 				self.errors.append(e)
-				self.synchronize()
+				self.recover()
 		return Body(statements)
 	
 	def parse_statement(self):
@@ -286,7 +323,7 @@ class Parser:
 		elif self.expect(TokenType.RETURN):
 			statement = self.parse_return_statement()
 		if not statement:
-			self.synchronize()
+			self.recover()
 			raise ParserException(f"expected a statement", self.peek().line_number)
 		self.require(TokenType.NEWLINE)
 		return statement
@@ -300,9 +337,9 @@ class Parser:
 		return WhileStatement(condition, body)
 	
 	def expr_is_valid_lvalue(expr):
-		if isinstance(expr, Primary) and expr.token.type == TokenType.IDENT:
+		if isinstance(expr, Primary) and expr.token.token_type == TokenType.IDENT:
 			return True
-		elif isinstance(expr, UnaryExpr) and expr.op.type == TokenType.STAR:
+		elif isinstance(expr, UnaryExpr) and expr.op.token_type == TokenType.STAR:
 			return True
 		return False
 	
@@ -325,18 +362,18 @@ class Parser:
 	
 	def parse_assignment(self, ident):
 		type = None
-		if self.peek().type == TokenType.COLON:
+		if self.peek().token_type == TokenType.COLON:
 			self.consume() # consume colon
 			type = self.require(TokenType.TYPE)
 		self.require(TokenType.ASSIGN)
 		expr = self.parse_expr()
-		return Assignment(ident, expr, type)
+		return AssignmentStatement(ident, expr, type)
 	
 	def parse_function_call(self):
 		name = self.require(TokenType.IDENT)
 		self.require(TokenType.LEFT_PAREN)
 		args = []
-		while self.expect(TokenType.IDENT):
+		while self.expect(*FIRST_EXPR):
 			ident = self.consume()
 			args.append(ident)
 			if not self.expect(TokenType.RIGHT_PAREN):
@@ -345,7 +382,7 @@ class Parser:
 		return FunctionCall(name, args)
 
 	def parse_expr(self):
-		if self.expect(TokenType.IDENT) and self.peek(1).type == TokenType.LEFT_PAREN:
+		if self.expect(TokenType.IDENT) and self.peek(1).token_type == TokenType.LEFT_PAREN:
 			return self.parse_function_call()
 		return self.parse_comparison()
 	
@@ -364,7 +401,7 @@ class Parser:
 
 	def parse_addition(self):
 		left = self.parse_factor()
-		while self.expect(TokenType.STAR, TokenType.SLASH):
+		while self.expect(TokenType.PLUS, TokenType.MINUS):
 			op = self.consume()
 			right = self.parse_factor()
 			left = BinExpr(left, op, right)
@@ -372,7 +409,7 @@ class Parser:
 	
 	def parse_factor(self):
 		left = self.parse_unary()
-		while self.expect(TokenType.PLUS, TokenType.MINUS):
+		while self.expect(TokenType.STAR, TokenType.SLASH):
 			op = self.consume()
 			right = self.parse_unary()
 			left = BinExpr(left, op, right)
@@ -395,5 +432,3 @@ class Parser:
 			return expr
 		else:
 			raise ParserException("expected primary expression", self.peek().line_number)
-
-

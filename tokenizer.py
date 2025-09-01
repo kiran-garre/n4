@@ -80,8 +80,8 @@ class TokenizerException(Exception):
 		super().__init__(self.message)
 
 class Token:
-	def __init__(self, type, literal, line_number=0):
-		self.type = type
+	def __init__(self, token_type, literal, line_number=0):
+		self.token_type = token_type
 		self.literal = literal
 		self.line_number = line_number
 
@@ -122,18 +122,18 @@ class Tokenizer:
 
 	def read_ident(self):
 		ident = []
-		while self.peek().isalnum() or self.peek() == '_' and not self.reached_eof():
+		while not self.reached_eof() and self.peek().isalnum() or self.peek() == '_':
 			ident.append(self.consume())
 		return Token(TokenType.IDENT, "".join(ident), self.line_number)
 
 	def read_number(self):
 		number = []
-		while self.peek().isnumeric() and not self.reached_eof():
+		while not self.reached_eof() and self.peek().isnumeric():
 			number.append(self.consume())
 		return Token(TokenType.NUMBER, "".join(number), self.line_number)
 
 	def consume_comment(self):
-		while self.peek() != "\n" and not self.reached_eof():
+		while not self.reached_eof() and self.peek() != "\n":
 			self.consume()
 	
 	def read_operator(self):
@@ -153,9 +153,9 @@ class Tokenizer:
 	def resolve_keywords(self):
 		for i in range(len(self.tokens)):
 			if self.tokens[i].literal in KEYWORDS:
-				self.tokens[i].type = KEYWORDS[self.tokens[i].literal]
+				self.tokens[i].token_type = KEYWORDS[self.tokens[i].literal]
 			elif self.tokens[i].literal in TYPES:
-				self.tokens[i].type = TokenType.TYPE
+				self.tokens[i].token_type = TokenType.TYPE
 
 	def tokenize(self):
 		while not self.reached_eof():
@@ -178,6 +178,8 @@ class Tokenizer:
 				self.consume()
 
 		self.resolve_keywords()
+		if self.tokens[-1].token_type != TokenType.NEWLINE:
+			self.errors.append(TokenizerException(f"file must end with a newline", self.line_number))
 		self.tokens.append(Token(TokenType.EOF, ''))
 		
 
