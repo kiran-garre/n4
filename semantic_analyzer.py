@@ -42,11 +42,10 @@ class SemanticAnalyzer:
 		for scope in reversed(self.scope_stack):
 			if name in scope:
 				node.dtype = scope[name]
-				print(id(node))
 				return
 		self.report(name, f"'{name}' used before definition", node.line)
 
-	def define(self, node: Primary, type: str):
+	def define(self, node: Primary, type: Type):
 		name = node.get_name()
 		if name in self.scope_stack[-1]:
 			self.report(name, f"redefinition of '{name}'", node.line)
@@ -61,7 +60,7 @@ class SemanticAnalyzer:
 		self.scope_stack.pop()
 
 	def fitting_int_type(value):
-		return "int"
+		return Type.literal_to_type("int")
 
 	def postorder(self, node):
 		"""
@@ -70,7 +69,6 @@ class SemanticAnalyzer:
 		print(self.scope_stack)
 		if isinstance(node, Primary):
 			if node.token.token_type == TokenType.IDENT:
-				print(id(node))
 				self.access(node)
 			elif node.token.token_type == TokenType.NUMBER:
 				node.dtype = SemanticAnalyzer.fitting_int_type(node.token.literal)
@@ -109,7 +107,7 @@ class SemanticAnalyzer:
 		elif isinstance(node, Param):
 			self.define(node, node.type)
 		elif isinstance(node, FunctionDefinition):
-			self.define(node, node.return_type.literal)
+			self.define(node, node.return_type)
 			self.new_scope()
 			for param in node.params:
 				self.postorder(param)

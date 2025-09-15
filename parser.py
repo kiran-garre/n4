@@ -25,7 +25,6 @@ unary      = ("-" | "!") unary | primary
 
 PARSER_RED_ERROR = "\033[1m\033[91mparse error:\033[0m"
 
-
 FIRST_EXPR = {
 	TokenType.IDENT,
 	TokenType.NUMBER, 
@@ -40,28 +39,73 @@ FIRST_BODY = FIRST_EXPR | {
 	TokenType.NEWLINE,
 }
 
-
 class ParserException(Exception):
 	def __init__(self, message="ParserException", line_number=0):
+		super().__init__(self.message)
 		self.message = message
 		self.line_number = line_number
-		super().__init__(self.message)
+
+class Type:
+	size_map = {
+		'void': 0,
+		'ptr': 4,
+		'byte': 1,
+		'short': 2,
+		'int': 4,
+		'long': 8,
+		'ubyte': 1,
+		'ushort': 2,
+		'uint': 4,
+		'ulong': 8,
+	}
+	def __init__(self, name, size, signed=True):
+		self.name = name
+		self.size = size
+		self.signed = signed
+
+	@staticmethod
+	def token_to_type(token: Token):
+		return Type.literal_to_type(token.literal)
+	
+	@classmethod
+	def literal_to_type(cls, literal: str):
+		return Type(
+			literal, 
+			Type.size_map[literal],
+			Type.literal_is_signed(literal)
+		)
+
+	@classmethod
+	def literal_is_signed(cls, literal: str):
+		return literal in ('ubyte', 'ushort', 'uint', 'ulong')
+	
+	def get_children(self):
+		return None
+
+	def get_value(self):
+		return self.name
+		
+
+class PointerType(Type):
+	def __init__(self, base_type):
+		super().__init__(f"ptr<{base_type}>", 8, False)
+		self.base_type = base_type
 
 class ASTNode:
-    def __init__(self, line=None):
-        self.line = line
+	def __init__(self, line=None):
+		self.line = line
 
 class Primary(ASTNode):
 	def __init__(self, token):
 		super().__init__(token.line_number)
 		self.token = token
-		self.dtype: str = None
+		self.dtype: Type = None
 	
 	def get_children(self):
 		return self.token.get_children()
 	
 	def get_value(self):
-		return f"{self.token.get_value()}: {self.dtype}"
+		return f"{self.token.get_value()}: {self.dtype.name}"
 	
 	def get_name(self):
 		return self.token.literal
@@ -109,17 +153,17 @@ class FunctionCall(ASTNode):
 Expr = Primary | UnaryExpr | BinExpr | FunctionCall
 
 class DefinitionStatement(ASTNode):
-	def __init__(self, ident: Primary, rhs: Expr, type: str):
+	def __init__(self, ident: Primary, rhs: Expr, type: Type):
 		super().__init__(ident.line)
 		self.ident = ident
 		self.rhs = rhs
 		self.type = type
 
 	def get_children(self):
-		return self.ident, self.rhs
+		return [self.rhs]
 
 	def get_value(self):
-		return f"{self.ident.get_name()}: {self.type}"
+		return f"define {self.ident.get_name()}: {self.type.name}"
 	
 class AssignmentStatement(ASTNode):
 	def __init__(self, lhs: Expr, rhs: Expr):
@@ -188,22 +232,22 @@ class Body(ASTNode):
 		return "body"
 
 class Param(ASTNode):
-	def __init__(self, ident: Primary, type: str):
+	def __init__(self, ident: Primary, type: Type):
 		super().__init__(ident.line)
 		self.ident = ident
 		self.type = type
 
 	def get_children(self):
-		None
+		return None
 	
 	def get_value(self):
-		return f"{self.ident.get_name()}: {self.type}"
+		return f"{self.ident.get_name()}: {self.type.name}"
 	
 	def get_name(self):
 		return self.ident.get_name()
 	
 class FunctionDefinition(ASTNode):
-	def __init__(self, name: Primary, params: list[Param], return_type: str, body):
+	def __init__(self, name: Primary, params: list[Param], return_type: Type, body):
 		super().__init__(name.line)
 		self.name = name
 		self.params = params
@@ -211,7 +255,7 @@ class FunctionDefinition(ASTNode):
 		self.body = body
 
 	def get_children(self):
-		return [*self.params, self.body, self.return_type,]
+		return [*self.params, self.body, self.return_type]
 	
 	def get_value(self):
 		return f"fn {self.name.get_name()}"
@@ -289,7 +333,7 @@ class Parser:
 		params = self.parse_params()
 		self.require(TokenType.RIGHT_PAREN)
 		self.require(TokenType.COLON)
-		return_type = self.require(TokenType.TYPE)
+		return_type = Type.token_to_type(self.require(TokenType.TYPE))
 		self.require(TokenType.NEWLINE)
 		body = self.parse_body()
 		self.require(TokenType.END)
@@ -300,7 +344,7 @@ class Parser:
 		while self.expect(TokenType.IDENT):
 			ident = self.parse_primary(TokenType.IDENT)
 			self.require(TokenType.COLON)
-			type = self.require(TokenType.TYPE).literal
+			type = Type.token_to_type(self.require(TokenType.TYPE))
 			params.append(Param(ident, type))
 			if not self.expect(TokenType.RIGHT_PAREN):
 				self.require(TokenType.COMMA)
@@ -382,7 +426,7 @@ class Parser:
 	def parse_definition(self):
 		name = self.parse_primary(TokenType.IDENT)
 		self.require(TokenType.COLON)
-		type = self.require(TokenType.TYPE).literal
+		type = Type.token_to_type(self.require(TokenType.TYPE))
 		self.require(TokenType.ASSIGN)
 		rhs = self.parse_expr()
 		return DefinitionStatement(name, rhs, type)
@@ -434,7 +478,7 @@ class Parser:
 		return left
 	
 	def parse_unary(self):
-		if self.expect(TokenType.STAR, TokenType.MINUS):
+		if self.expect(TokenType.STAR, TokenType.MINUS, TokenType.AMPERSAND):
 			op = self.consume()
 			operand = self.parse_primary()
 			return UnaryExpr(op, operand)

@@ -26,10 +26,11 @@ class TokenType(Enum):
 	SLASH = 403
 	COLON = 404
 	ASSIGN = 405
-	LESS = 406
-	GREATER = 407
-	LESS_EQUAL = 408
-	GREATER_EQUAL = 409
+	AMPERSAND = 406
+	LESS = 407
+	GREATER = 408
+	LESS_EQUAL = 409
+	GREATER_EQUAL = 410
 
 COMMENT_CHAR = ';'
 OPERATORS = {
@@ -39,6 +40,7 @@ OPERATORS = {
 	'/': TokenType.SLASH,
 	':': TokenType.COLON,
 	'=': TokenType.ASSIGN,
+	'&': TokenType.AMPERSAND,
 	'<': TokenType.LESS,
 	'>': TokenType.GREATER,
 	'<=': TokenType.LESS_EQUAL,
@@ -70,6 +72,7 @@ TYPES = {
 	'uint',
 	'ulong'
 }
+
 
 TOKENIZER_RED_ERROR = "\033[1m\033[91mtoken error:\033[0m"
 
