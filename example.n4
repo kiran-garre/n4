@@ -1,15 +1,14 @@
-@compile
-fn increment(n:int) : int
-    return n + 1
+fn increment(n: int): int
+	return n + 1
 end
 
-;fn copy_loop(src: ptr, dest: ptr, size: int): int
-;    i:int = 0
-;    while (i < size)
-;        *dest = *src
-;        i = increment(i)
-;    end
-;    return 0
-;end
+fn copy_loop(src: ptr, dest: ptr, size: int): int
+    i: int = 0
+    while i < size
+        *(dest + i) = *(src + i)
+        i = increment(i)
+	end
+    return 0
+end
 
 

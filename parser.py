@@ -41,7 +41,7 @@ FIRST_BODY = FIRST_EXPR | {
 
 class ParserException(Exception):
 	def __init__(self, message="ParserException", line_number=0):
-		super().__init__(self.message)
+		super().__init__(message)
 		self.message = message
 		self.line_number = line_number
 
@@ -105,7 +105,9 @@ class Primary(ASTNode):
 		return self.token.get_children()
 	
 	def get_value(self):
-		return f"{self.token.get_value()}: {self.dtype.name}"
+		if self.dtype: 
+			return f"{self.token.get_value()}: {self.dtype.name}"
+		return f"{self.token.get_value()}: no type"
 	
 	def get_name(self):
 		return self.token.literal
@@ -280,6 +282,7 @@ class Parser:
 		self.filename = filename
 		self.idx = 0
 		self.errors = []
+		self.ast = None
 
 	def peek(self, ahead=0):
 		if self.idx >= len(self.tokens):
@@ -324,7 +327,7 @@ class Parser:
 					contents.append(self.parse_statement())
 			except ParserException as e:
 				self.errors.append(e)
-		return Program(contents)
+		self.ast = Program(contents)
 	
 	def parse_function(self):
 		self.require(TokenType.FN)

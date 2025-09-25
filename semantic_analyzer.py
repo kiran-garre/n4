@@ -66,7 +66,6 @@ class SemanticAnalyzer:
 		"""
 		Assumes that AST is syntactically correct.
 		"""
-		print(self.scope_stack)
 		if isinstance(node, Primary):
 			if node.token.token_type == TokenType.IDENT:
 				self.access(node)
